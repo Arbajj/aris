@@ -1,24 +1,14 @@
-# --- Python / Backend ---
-# Virtual Environment
-backend/venv/
+# Python / Backend
 venv/
 env/
+.venv/
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
 
-# Dependencies and Config
-pyvenv.cfg
-.vscode/
-.idea/
-
-# --- Node / Frontend ---
-# Dependencies
-frontend/node_modules/
+# Node / Frontend
 node_modules/
-
-# Build files
 frontend/dist/
 build/
 .eslintcache
@@ -27,11 +17,11 @@ build/
 .env
 .env.local
 
-# --- Project Specific ---
-# Uploaded Resumes (Security ke liye resumes GitHub par nahi daalte)
+# Project specific
 uploads/
-backend/uploads/
 
-# OS generated files
+# Editor / OS
+.vscode/
+.idea/
 .DS_Store
 Thumbs.db
