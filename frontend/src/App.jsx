@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import axios from "axios";
+import History from "./History";
 
 const API_URL = "http://127.0.0.1:8000";
 
@@ -170,6 +171,7 @@ export default function App() {
   const [error, setError] = useState("");
   const [uploaded, setUploaded] = useState(false);
   const [animateScores, setAnimateScores] = useState(false);
+    const [showHistory, setShowHistory] = useState(false);
 
   const theme = darkMode ? dark : light;
 
@@ -234,6 +236,9 @@ export default function App() {
         <div style={appStyles.headerRight}>
           <div style={{ ...appStyles.onlineDot, background: "#d4af37" }} />
           <span style={{ fontSize: "11px", color: theme.muted, letterSpacing: "1px" }}>GROQ ENGINE ONLINE</span>
+                    <button onClick={() => setShowHistory(true)} style={{ ...appStyles.toggleBtn, background: theme.cardBg, border: `1px solid ${theme.border}`, color: "#d4af37" }}>
+            ◈ History
+          </button>
           <button onClick={() => setDarkMode(!darkMode)} style={{ ...appStyles.toggleBtn, background: theme.cardBg, border: `1px solid ${theme.border}`, color: theme.text }}>
             {darkMode ? "☀ Light" : "◑ Dark"}
           </button>
@@ -241,6 +246,18 @@ export default function App() {
       </header>
 
       <main style={appStyles.main}>
+                {showHistory && (
+          <History
+            theme={theme}
+            onClose={() => setShowHistory(false)}
+            onOpen={(res) => {
+              setResults(res);
+              setUploaded(true);
+              setAnimateScores(false);
+              setShowHistory(false);
+            }}
+          />
+        )}
         {/* Hero */}
         <div style={appStyles.hero}>
           <div style={appStyles.heroEyebrow}>
