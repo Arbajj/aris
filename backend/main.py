@@ -7,7 +7,7 @@ from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from typing import List
 from dotenv import load_dotenv
-
+from database import init_db, get_conn
 # --- .env se API key load ---
 basedir = os.path.abspath(os.path.dirname(__file__))
 load_dotenv(os.path.join(basedir, ".env"))
@@ -25,6 +25,7 @@ MAX_FILE_SIZE = 5 * 1024 * 1024   # 5 MB
 MAX_FILES = 5                     # free plan ki token limit ke liye
 
 app = FastAPI()
+init_db()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
@@ -108,7 +109,32 @@ def analyze_with_groq(resume_text, jd_text):
         print(f"Groq Error: {e}")   # asli error sirf terminal mein
         return error_result("", "Analysis failed. Please try again.")
 
-
+def save_screening(jd_text, results):
+    conn = get_conn()
+    try:
+        cur = conn.execute("INSERT INTO screenings (jd_text) VALUES (?)", (jd_text,))
+        screening_id = cur.lastrowid
+        for r in results:
+            conn.execute(
+                """INSERT INTO results
+                   (screening_id, filename, score, verdict, summary,
+                    skills, missing_skills, interview_questions)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    screening_id,
+                    r.get("filename"),
+                    r.get("score", 0),
+                    r.get("verdict"),
+                    r.get("summary", ""),
+                    json.dumps(r.get("skills", [])),
+                    json.dumps(r.get("missing_skills", [])),
+                    json.dumps(r.get("interview_questions", [])),
+                ),
+            )
+        conn.commit()
+        return screening_id
+    finally:
+        conn.close()
 @app.get("/")
 def home():
     return {"message": "ARIS Backend Running"}
@@ -146,4 +172,15 @@ async def upload_resumes(files: List[UploadFile] = File(...), jd: str = Form(...
         results.append(analysis)
 
     results.sort(key=lambda r: r.get("score", 0), reverse=True)
+    results.sort(key=lambda r: r.get("score", 0), reverse=True)
+
+    screening_id = None
+    valid = [r for r in results if r.get("verdict") != "Error"]
+    if valid:
+        try:
+            screening_id = save_screening(jd, valid)
+        except Exception as e:
+            print(f"DB save error: {e}")   # DB fail ho toh bhi user ko result mile
+
+    return {"total": len(results), "screening_id": screening_id, "results": results}
     return {"total": len(results), "results": results}
