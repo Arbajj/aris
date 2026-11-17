@@ -3,11 +3,12 @@ import json
 import time
 import fitz
 from groq import Groq, RateLimitError
-from fastapi import FastAPI, UploadFile, File, Form
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from typing import List
 from dotenv import load_dotenv
 from database import init_db, get_conn
+
 # --- .env se API key load ---
 basedir = os.path.abspath(os.path.dirname(__file__))
 load_dotenv(os.path.join(basedir, ".env"))
@@ -109,6 +110,7 @@ def analyze_with_groq(resume_text, jd_text):
         print(f"Groq Error: {e}")   # asli error sirf terminal mein
         return error_result("", "Analysis failed. Please try again.")
 
+
 def save_screening(jd_text, results):
     conn = get_conn()
     try:
@@ -135,9 +137,94 @@ def save_screening(jd_text, results):
         return screening_id
     finally:
         conn.close()
+
+
 @app.get("/")
 def home():
     return {"message": "ARIS Backend Running"}
+
+
+@app.get("/history")
+def get_history():
+    """Saari purani screenings ki list (naye pehle)."""
+    conn = get_conn()
+    try:
+        rows = conn.execute("""
+            SELECT s.id, s.created_at, s.jd_text,
+                   COUNT(r.id) AS total,
+                   AVG(r.score) AS avg_score,
+                   MAX(r.score) AS top_score
+            FROM screenings s
+            LEFT JOIN results r ON r.screening_id = s.id
+            GROUP BY s.id
+            ORDER BY s.id DESC
+        """).fetchall()
+        return [
+            {
+                "id": r["id"],
+                "created_at": r["created_at"],   # UTC time
+                "jd_preview": (r["jd_text"] or "")[:120],
+                "total": r["total"],
+                "avg_score": round(r["avg_score"]) if r["avg_score"] is not None else 0,
+                "top_score": r["top_score"] or 0,
+            }
+            for r in rows
+        ]
+    finally:
+        conn.close()
+
+
+@app.get("/history/{screening_id}")
+def get_screening(screening_id: int):
+    """Ek screening ke saare results."""
+    conn = get_conn()
+    try:
+        s = conn.execute(
+            "SELECT id, created_at, jd_text FROM screenings WHERE id = ?",
+            (screening_id,),
+        ).fetchone()
+        if not s:
+            raise HTTPException(status_code=404, detail="Screening not found")
+
+        rows = conn.execute(
+            "SELECT * FROM results WHERE screening_id = ? ORDER BY score DESC",
+            (screening_id,),
+        ).fetchall()
+
+        results = [
+            {
+                "filename": r["filename"],
+                "score": r["score"],
+                "verdict": r["verdict"],
+                "summary": r["summary"],
+                "skills": json.loads(r["skills"] or "[]"),
+                "missing_skills": json.loads(r["missing_skills"] or "[]"),
+                "interview_questions": json.loads(r["interview_questions"] or "[]"),
+            }
+            for r in rows
+        ]
+        return {
+            "id": s["id"],
+            "created_at": s["created_at"],
+            "jd_text": s["jd_text"],
+            "results": results,
+        }
+    finally:
+        conn.close()
+
+
+@app.delete("/history/{screening_id}")
+def delete_screening(screening_id: int):
+    """Ek screening aur uske saare results hata do (privacy ke liye)."""
+    conn = get_conn()
+    try:
+        cur = conn.execute("DELETE FROM screenings WHERE id = ?", (screening_id,))
+        conn.commit()
+        if cur.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Screening not found")
+        return {"deleted": screening_id}
+    finally:
+        conn.close()
 
 
 @app.post("/upload-resumes")
@@ -172,7 +259,6 @@ async def upload_resumes(files: List[UploadFile] = File(...), jd: str = Form(...
         results.append(analysis)
 
     results.sort(key=lambda r: r.get("score", 0), reverse=True)
-    results.sort(key=lambda r: r.get("score", 0), reverse=True)
 
     screening_id = None
     valid = [r for r in results if r.get("verdict") != "Error"]
@@ -183,4 +269,3 @@ async def upload_resumes(files: List[UploadFile] = File(...), jd: str = Form(...
             print(f"DB save error: {e}")   # DB fail ho toh bhi user ko result mile
 
     return {"total": len(results), "screening_id": screening_id, "results": results}
-    return {"total": len(results), "results": results}
