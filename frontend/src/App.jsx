@@ -1,8 +1,8 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import axios from "axios";
 import History from "./History";
+import { API_URL } from "./config";
 
-const API_URL = "http://127.0.0.1:8000";
 
 // ─── PARTICLE CANVAS ───────────────────────────────────────────────
 function ParticleCanvas() {
@@ -150,6 +150,7 @@ function VerdictBadge({ verdict }) {
     "Selected":  { bg: "rgba(212,175,55,0.15)", border: "rgba(212,175,55,0.5)", color: "#d4af37", icon: "◆" },
     "Waitlist":  { bg: "rgba(192,147,42,0.1)",  border: "rgba(192,147,42,0.4)", color: "#c0932a", icon: "◇" },
     "Rejected":  { bg: "rgba(139,69,19,0.15)",  border: "rgba(139,69,19,0.4)", color: "#cd853f", icon: "✕" },
+        "Error":     { bg: "rgba(120,120,120,0.12)", border: "rgba(120,120,120,0.4)", color: "#999999", icon: "!" },
   };
   const c = config[verdict] || config["Waitlist"];
   return (
@@ -174,6 +175,7 @@ export default function App() {
     const [showHistory, setShowHistory] = useState(false);
 
   const theme = darkMode ? dark : light;
+    const validResults = results.filter(r => r.verdict !== "Error");
 
   useEffect(() => {
     if (uploaded && results.length > 0) {
@@ -390,7 +392,7 @@ export default function App() {
                 { v: results.filter(r=>r.verdict==="Selected").length, l: "SELECTED", c: "#d4af37" },
                 { v: results.filter(r=>r.verdict==="Waitlist").length, l: "WAITLIST", c: "#c0932a" },
                 { v: results.filter(r=>r.verdict==="Rejected").length, l: "REJECTED", c: "#cd853f" },
-                { v: Math.round(results.reduce((a,r)=>a+(r.score||0),0)/results.length), l: "AVG SCORE" },
+               { v: validResults.length ? Math.round(validResults.reduce((a,r)=>a+(r.score||0),0)/validResults.length) : 0, l: "AVG SCORE" },
               ].map((s, i) => (
                 <div key={i} style={appStyles.statCell}>
                   <span style={{ fontSize: "32px", fontWeight: "800", fontFamily: "'Cormorant Garamond', serif", color: s.c || theme.text }}>{s.v}</span>
