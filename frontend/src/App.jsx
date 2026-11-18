@@ -407,11 +407,11 @@ export default function App() {
                 <div key={i} style={{
                   ...appStyles.card,
                   background: theme.cardBg,
-                  border: i === 0 ? "1px solid rgba(212,175,55,0.5)" : `1px solid ${theme.border}`,
-                  boxShadow: i === 0 ? "0 0 30px rgba(212,175,55,0.08)" : "none",
+                 border: i === 0 && r.verdict === "Selected" ?"1px solid rgba(212,175,55,0.5)" : `1px solid ${theme.border}`,
+                  boxShadow: i === 0 && r.verdict === "Selected" ? "0 0 30px rgba(212,175,55,0.08)" : "none",
                 }}>
                   {/* Top badge */}
-                  {i === 0 && (
+                 {i === 0 && r.verdict === "Selected" && (
                     <div style={appStyles.topBadge}>
                       ◆ TOP CANDIDATE — RECOMMENDED FOR INTERVIEW
                     </div>
@@ -489,7 +489,7 @@ export default function App() {
       </main>
 
       <footer style={{ ...appStyles.footer, borderTop: `1px solid ${theme.border}`, color: theme.muted }}>
-        ARIS v3.0 &nbsp;◈&nbsp; Powered by Groq AI + Llama 3.3 70B &nbsp;◈&nbsp; Final Year Project &nbsp;◈&nbsp; BSc CS (AI/ML)
+        ARIS v3.0 &nbsp;◈&nbsp; Powered by Groq AI + GPT-OSS 120B &nbsp;◈&nbsp; Final Year Project &nbsp;◈&nbsp; BSc CS (AI/ML)
       </footer>
 
       <style>{`
