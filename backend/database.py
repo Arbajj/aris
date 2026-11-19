@@ -1,5 +1,4 @@
 import os
-import json
 import sqlite3
 
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "aris.db")
@@ -15,10 +14,19 @@ def get_conn():
 def init_db():
     conn = get_conn()
     conn.executescript("""
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            email TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+
         CREATE TABLE IF NOT EXISTS screenings (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-            jd_text TEXT NOT NULL
+            jd_text TEXT NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         );
 
         CREATE TABLE IF NOT EXISTS results (

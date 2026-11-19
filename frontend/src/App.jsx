@@ -2,6 +2,10 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import axios from "axios";
 import History from "./History";
 import { API_URL } from "./config";
+import Login from "./Login";
+import { getToken, setToken, applyToken } from "./auth";
+
+applyToken();
 
 
 // ─── PARTICLE CANVAS ───────────────────────────────────────────────
@@ -173,8 +177,14 @@ export default function App() {
   const [uploaded, setUploaded] = useState(false);
   const [animateScores, setAnimateScores] = useState(false);
     const [showHistory, setShowHistory] = useState(false);
+      const [authed, setAuthed] = useState(!!getToken());
 
   const theme = darkMode ? dark : light;
+    const logout = () => {
+    setToken(null);
+    setAuthed(false);
+    setFiles([]); setResults([]); setUploaded(false); setJd(""); setError(""); setAnimateScores(false); setShowHistory(false);
+  };
     const validResults = results.filter(r => r.verdict !== "Error");
 
   useEffect(() => {
@@ -207,7 +217,7 @@ export default function App() {
       const res = await axios.post(`${API_URL}/upload-resumes`, formData, { headers: { "Content-Type": "multipart/form-data" } });
       const sorted = [...res.data.results].sort((a, b) => (b.score || 0) - (a.score || 0));
       setResults(sorted); setUploaded(true);
-    } catch (err) {
+    } catch (err) {      if (err.response?.status === 401) { logout(); return; }
       setError(err.response?.data?.detail || "Server error. Make sure backend is running.");
     } finally { setLoading(false); }
   };
@@ -223,7 +233,7 @@ export default function App() {
   };
 
   if (showIntro) return <IntroScreen onDone={() => setShowIntro(false)} />;
-
+  if (!authed) return <Login theme={theme} onSuccess={() => setAuthed(true)} />;
   return (
     <div style={{ ...appStyles.root, background: theme.bg, color: theme.text }}>
       <ParticleCanvas />
@@ -235,11 +245,14 @@ export default function App() {
           <span style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: "22px", fontWeight: "700", color: "#d4af37", letterSpacing: "6px" }}>ARIS</span>
           <span style={{ fontSize: "11px", color: theme.muted, letterSpacing: "2px" }}>AI RECRUITMENT INTELLIGENCE</span>
         </div>
-        <div style={appStyles.headerRight}>
+                <div style={appStyles.headerRight}>
           <div style={{ ...appStyles.onlineDot, background: "#d4af37" }} />
           <span style={{ fontSize: "11px", color: theme.muted, letterSpacing: "1px" }}>GROQ ENGINE ONLINE</span>
-                    <button onClick={() => setShowHistory(true)} style={{ ...appStyles.toggleBtn, background: theme.cardBg, border: `1px solid ${theme.border}`, color: "#d4af37" }}>
+          <button onClick={() => setShowHistory(true)} style={{ ...appStyles.toggleBtn, background: theme.cardBg, border: `1px solid ${theme.border}`, color: "#d4af37" }}>
             ◈ History
+          </button>
+          <button onClick={logout} style={{ ...appStyles.toggleBtn, background: theme.cardBg, border: `1px solid ${theme.border}`, color: theme.muted }}>
+            ⏻ Logout
           </button>
           <button onClick={() => setDarkMode(!darkMode)} style={{ ...appStyles.toggleBtn, background: theme.cardBg, border: `1px solid ${theme.border}`, color: theme.text }}>
             {darkMode ? "☀ Light" : "◑ Dark"}
@@ -259,6 +272,7 @@ export default function App() {
               setShowHistory(false);
             }}
           />
+          
         )}
         {/* Hero */}
         <div style={appStyles.hero}>

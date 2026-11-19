@@ -3,7 +3,7 @@ import json
 import time
 import fitz
 from groq import Groq, RateLimitError
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from typing import List
 from dotenv import load_dotenv
@@ -12,6 +12,8 @@ from database import init_db, get_conn
 # --- .env se API key load ---
 basedir = os.path.abspath(os.path.dirname(__file__))
 load_dotenv(os.path.join(basedir, ".env"))
+
+from auth import router as auth_router, get_current_user  # load_dotenv ke BAAD
 
 api_key = os.getenv("GROQ_API_KEY")
 if not api_key:
@@ -27,6 +29,7 @@ MAX_FILES = 5                     # free plan ki token limit ke liye
 
 app = FastAPI()
 init_db()
+app.include_router(auth_router)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
@@ -44,7 +47,6 @@ def error_result(filename, message):
 
 
 def get_verdict(score):
-    # Verdict LLM se nahi, score se nikalta hai (stable rahega)
     if score >= 70:
         return "Selected"
     if score >= 50:
@@ -85,7 +87,6 @@ def analyze_with_groq(resume_text, jd_text):
                 )
                 break
             except RateLimitError:
-                # Free plan ki limit lagi: thoda ruko, phir dobara try
                 print(f"Rate limit hit, waiting 20s (attempt {attempt + 1}/3)")
                 time.sleep(20)
 
@@ -107,14 +108,17 @@ def analyze_with_groq(resume_text, jd_text):
         result.setdefault("summary", "")
         return result
     except Exception as e:
-        print(f"Groq Error: {e}")   # asli error sirf terminal mein
+        print(f"Groq Error: {e}")
         return error_result("", "Analysis failed. Please try again.")
 
 
-def save_screening(jd_text, results):
+def save_screening(user_id, jd_text, results):
     conn = get_conn()
     try:
-        cur = conn.execute("INSERT INTO screenings (jd_text) VALUES (?)", (jd_text,))
+        cur = conn.execute(
+            "INSERT INTO screenings (user_id, jd_text) VALUES (?, ?)",
+            (user_id, jd_text),
+        )
         screening_id = cur.lastrowid
         for r in results:
             conn.execute(
@@ -145,8 +149,8 @@ def home():
 
 
 @app.get("/history")
-def get_history():
-    """Saari purani screenings ki list (naye pehle)."""
+def get_history(user=Depends(get_current_user)):
+    """Sirf logged-in user ki apni screenings."""
     conn = get_conn()
     try:
         rows = conn.execute("""
@@ -156,13 +160,14 @@ def get_history():
                    MAX(r.score) AS top_score
             FROM screenings s
             LEFT JOIN results r ON r.screening_id = s.id
+            WHERE s.user_id = ?
             GROUP BY s.id
             ORDER BY s.id DESC
-        """).fetchall()
+        """, (user["id"],)).fetchall()
         return [
             {
                 "id": r["id"],
-                "created_at": r["created_at"],   # UTC time
+                "created_at": r["created_at"],
                 "jd_preview": (r["jd_text"] or "")[:120],
                 "total": r["total"],
                 "avg_score": round(r["avg_score"]) if r["avg_score"] is not None else 0,
@@ -175,13 +180,12 @@ def get_history():
 
 
 @app.get("/history/{screening_id}")
-def get_screening(screening_id: int):
-    """Ek screening ke saare results."""
+def get_screening(screening_id: int, user=Depends(get_current_user)):
     conn = get_conn()
     try:
         s = conn.execute(
-            "SELECT id, created_at, jd_text FROM screenings WHERE id = ?",
-            (screening_id,),
+            "SELECT id, created_at, jd_text FROM screenings WHERE id = ? AND user_id = ?",
+            (screening_id, user["id"]),
         ).fetchone()
         if not s:
             raise HTTPException(status_code=404, detail="Screening not found")
@@ -214,11 +218,13 @@ def get_screening(screening_id: int):
 
 
 @app.delete("/history/{screening_id}")
-def delete_screening(screening_id: int):
-    """Ek screening aur uske saare results hata do (privacy ke liye)."""
+def delete_screening(screening_id: int, user=Depends(get_current_user)):
     conn = get_conn()
     try:
-        cur = conn.execute("DELETE FROM screenings WHERE id = ?", (screening_id,))
+        cur = conn.execute(
+            "DELETE FROM screenings WHERE id = ? AND user_id = ?",
+            (screening_id, user["id"]),
+        )
         conn.commit()
         if cur.rowcount == 0:
             raise HTTPException(status_code=404, detail="Screening not found")
@@ -228,7 +234,11 @@ def delete_screening(screening_id: int):
 
 
 @app.post("/upload-resumes")
-async def upload_resumes(files: List[UploadFile] = File(...), jd: str = Form(...)):
+async def upload_resumes(
+    files: List[UploadFile] = File(...),
+    jd: str = Form(...),
+    user=Depends(get_current_user),
+):
     results = []
 
     for file in files[:MAX_FILES]:
@@ -243,7 +253,6 @@ async def upload_resumes(files: List[UploadFile] = File(...), jd: str = Form(...
             results.append(error_result(name, "File too large (max 5 MB)"))
             continue
 
-        # Disk pe save nahi, seedha memory se padho (privacy)
         text = ""
         try:
             with fitz.open(stream=data, filetype="pdf") as doc:
@@ -264,8 +273,8 @@ async def upload_resumes(files: List[UploadFile] = File(...), jd: str = Form(...
     valid = [r for r in results if r.get("verdict") != "Error"]
     if valid:
         try:
-            screening_id = save_screening(jd, valid)
+            screening_id = save_screening(user["id"], jd, valid)
         except Exception as e:
-            print(f"DB save error: {e}")   # DB fail ho toh bhi user ko result mile
+            print(f"DB save error: {e}")
 
     return {"total": len(results), "screening_id": screening_id, "results": results}
